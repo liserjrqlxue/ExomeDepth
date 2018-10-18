@@ -245,6 +245,7 @@ countBamInGRanges.exomeDepth <- function (bam.file, index = bam.file, granges, m
 #' indexes for the BAM files, without the '.bai' suffix. If the indexes are
 #' simply obtained by adding .bai to the BAM files, this argument does not need
 #' to be specified.
+#' @param bam.names Optional \code{character} argument with the list of 
 #' @param min.mapq \code{numeric}, minimum mapping quality to include a read.
 #' @param read.width \code{numeric}, maximum distance between the side of the
 #' target region and the middle of the paired read to include the paired read
@@ -270,7 +271,8 @@ countBamInGRanges.exomeDepth <- function (bam.file, index = bam.file, granges, m
 #'
 
 getBamCounts <- function(bed.frame = NULL, bed.file = NULL, bam.files, index.files = bam.files,
-                         min.mapq = 20, read.width = 300, include.chr = FALSE, referenceFasta = NULL) {
+                         min.mapq = 20, read.width = 300, include.chr = FALSE, referenceFasta = NULL,
+                         bam.names = bam.files, par.num=1) {
 
   if (is.null(bed.frame)) {
     if (is.null(bed.file)) {
@@ -329,12 +331,28 @@ if (!is.null(referenceFasta)) {
                                       what = c("mapq", "pos", "isize"), )
 
 
-
-  for (i in 1:nfiles) {
-    bam <- bam.files[ i ]
-    index <- index.files[ i ]
-    rdata[[ basename(bam) ]] <- countBamInGRanges.exomeDepth ( bam.file = bam, index = index, granges = target, min.mapq = min.mapq, read.width = read.width)
-    message("Number of counted fragments : ", sum(rdata[[ basename(bam) ]]))
+  if(par.num>1 && all(is.element(c("doParallel","foreach"),installed.packages()[,1]))){
+    cl <- parallel::makeCluster(par.num)
+    doParallel::registerDoParallel(cl)
+    par.data<-foreach(i=1:nfiles)%dopar%{
+      bam <- bam.files[ i ]
+      index <- index.files[ i ]
+      t <- countBamInGRanges.exomeDepth ( bam.file = bam, index = index, granges = target, min.mapq = min.mapq, read.width = read.width)
+      message("Number of counted fragments : ", sum(t))
+      t
+    }
+    for (i in 1:nfiles) {
+      name <- basename(bam.names[ i ])
+      rdata[[ name ]] <- par.data[[i]]
+    }
+  }else{
+    for (i in 1:nfiles) {
+      bam <- bam.files[ i ]
+      index <- index.files[ i ]
+      name <- basename(bam.names[ i ])
+      rdata[[ name ]] <- countBamInGRanges.exomeDepth ( bam.file = bam, index = index, granges = target, min.mapq = min.mapq, read.width = read.width)
+      message("Number of counted fragments : ", sum(rdata[[ name ]]))
+    }
   }
 
   return(rdata)
